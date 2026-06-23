@@ -14,6 +14,7 @@ class FloorSummaryPanel(QWidget):
     """Display floor-level summary information including area totals and zone breakdown."""
 
     one_level_overlay_toggled = pyqtSignal(bool)
+    upper_level_overlay_toggled = pyqtSignal(bool)
 
     def __init__(self) -> None:
         super().__init__()
@@ -34,6 +35,8 @@ class FloorSummaryPanel(QWidget):
         self._above_2m_label = QLabel("Above 2m: 0", self)
         self._one_level_overlay_checkbox = QCheckBox("Show lower level", self)
         self._one_level_overlay_checkbox.toggled.connect(self.one_level_overlay_toggled.emit)
+        self._upper_level_overlay_checkbox = QCheckBox("Show upper level", self)
+        self._upper_level_overlay_checkbox.toggled.connect(self.upper_level_overlay_toggled.emit)
 
         legend = HeightZoneLegend()
 
@@ -51,6 +54,7 @@ class FloorSummaryPanel(QWidget):
         layout.addWidget(self._between_1m_2m_label)
         layout.addWidget(self._above_2m_label)
         layout.addWidget(self._one_level_overlay_checkbox)
+        layout.addWidget(self._upper_level_overlay_checkbox)
         layout.addWidget(legend)
         layout.addStretch()
         self.setLayout(layout)
@@ -83,8 +87,13 @@ class FloorSummaryPanel(QWidget):
         self._between_1m_2m_label.setText(f"1m–2m: {between_1m_2m_count}")
         self._above_2m_label.setText(f"Above 2m: {above_2m_count}")
 
-    def set_one_level_overlay_enabled(self, enabled: bool) -> None:
-        """Update checkbox state without emitting duplicate updates."""
+    def set_one_level_overlay_enabled(self, lower_enabled: bool, upper_enabled: bool) -> None:
+        """Update overlay checkbox states without emitting duplicate updates."""
         self._one_level_overlay_checkbox.blockSignals(True)
-        self._one_level_overlay_checkbox.setChecked(enabled)
+        self._upper_level_overlay_checkbox.blockSignals(True)
+
+        self._one_level_overlay_checkbox.setChecked(lower_enabled)
+        self._upper_level_overlay_checkbox.setChecked(upper_enabled)
+
         self._one_level_overlay_checkbox.blockSignals(False)
+        self._upper_level_overlay_checkbox.blockSignals(False)

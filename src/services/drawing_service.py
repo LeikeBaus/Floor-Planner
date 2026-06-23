@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+import re
+
+from shapely.geometry import Polygon
 
 from geometry.dimension_engine import DimensionEngine
 from geometry.point import Point
@@ -204,31 +207,92 @@ class DrawingService:
         return PropertyUpdateResult(requires_recalculation=False, target_kind="unknown")
 
     def _preserve_room_metadata(self, previous: Sequence[Room], current: Sequence[Room]) -> None:
-        """Carry room names/labels over when room geometry remains near-identical."""
-        prev_rooms = list(previous)
-        for room in current:
-            polygon = room.polygon
-            if not polygon:
+        """Preserve room metadata across topology changes with split-aware matching.
+
+        For split rooms, the largest overlapping new room keeps the original metadata.
+        Smaller split fragments receive a fresh room name.
+        """
+        if not previous or not current:
+            return
+
+        prev_polygons = [self._room_polygon(room) for room in previous]
+        current_polygons = [self._room_polygon(room) for room in current]
+
+        # Build overlap pairs and greedily assign strongest one-to-one matches.
+        overlaps: list[tuple[float, int, int]] = []
+        for old_index, old_poly in enumerate(prev_polygons):
+            if old_poly is None:
+                continue
+            for new_index, new_poly in enumerate(current_polygons):
+                if new_poly is None:
+                    continue
+                overlap_area = old_poly.intersection(new_poly).area
+                if overlap_area > 1.0:
+                    overlaps.append((overlap_area, old_index, new_index))
+
+        overlaps.sort(reverse=True)
+        assigned_old: set[int] = set()
+        assigned_new: set[int] = set()
+        matches: dict[int, int] = {}
+
+        for _area, old_index, new_index in overlaps:
+            if old_index in assigned_old or new_index in assigned_new:
+                continue
+            assigned_old.add(old_index)
+            assigned_new.add(new_index)
+            matches[new_index] = old_index
+
+        used_names = {room.name for room in previous}
+
+        for new_index, room in enumerate(current):
+            old_index = matches.get(new_index)
+            if old_index is None:
+                room.name = self._next_generated_room_name(used_names)
+                room.label_offset_x = 0.0
+                room.label_offset_y = 0.0
+                used_names.add(room.name)
                 continue
 
-            cx = sum(point.x for point in polygon) / len(polygon)
-            cy = sum(point.y for point in polygon) / len(polygon)
+            old_room = previous[old_index]
+            room.name = old_room.name
+            room.include_in_living_area = old_room.include_in_living_area
 
-            best = None
-            best_dist = float("inf")
-            for old in prev_rooms:
-                old_polygon = old.polygon
-                if not old_polygon:
-                    continue
-                ox = sum(point.x for point in old_polygon) / len(old_polygon)
-                oy = sum(point.y for point in old_polygon) / len(old_polygon)
-                dist = ((cx - ox) ** 2 + (cy - oy) ** 2) ** 0.5
-                if dist < best_dist:
-                    best_dist = dist
-                    best = old
+            old_poly = prev_polygons[old_index]
+            new_poly = current_polygons[new_index]
+            overlap_ratio = 0.0
+            if old_poly is not None and new_poly is not None and old_poly.area > 1e-6:
+                overlap_ratio = old_poly.intersection(new_poly).area / old_poly.area
 
-            if best is not None and best_dist <= 500.0:
-                room.name = best.name
-                room.include_in_living_area = best.include_in_living_area
-                room.label_offset_x = best.label_offset_x
-                room.label_offset_y = best.label_offset_y
+            # Large geometry changes (for example after splitting) should recentre labels.
+            if overlap_ratio >= 0.8:
+                room.label_offset_x = old_room.label_offset_x
+                room.label_offset_y = old_room.label_offset_y
+            else:
+                room.label_offset_x = 0.0
+                room.label_offset_y = 0.0
+
+            used_names.add(room.name)
+
+    def _room_polygon(self, room: Room) -> Polygon | None:
+        """Build a valid shapely polygon for overlap matching."""
+        if len(room.polygon) < 3:
+            return None
+        polygon = Polygon([(point.x, point.y) for point in room.polygon])
+        if polygon.is_empty:
+            return None
+        if not polygon.is_valid:
+            polygon = polygon.buffer(0)
+        if polygon.is_empty or polygon.area <= 1.0:
+            return None
+        return polygon
+
+    def _next_generated_room_name(self, used_names: set[str]) -> str:
+        """Return the next free generated room name in the Room N sequence."""
+        max_index = 0
+        pattern = re.compile(r"^Room\s+(\d+)$")
+        for name in used_names:
+            match = pattern.match(name.strip())
+            if match is None:
+                continue
+            max_index = max(max_index, int(match.group(1)))
+        return f"Room {max_index + 1}"

@@ -157,10 +157,10 @@ class MainWindow(QMainWindow):
         if callable(set_visible):
             set_visible(visible)
 
-    def set_one_level_overlay_enabled(self, enabled: bool) -> None:
-        """Synchronize lower-level overlay checkbox state in summary panel."""
+    def set_one_level_overlay_enabled(self, lower_enabled: bool, upper_enabled: bool) -> None:
+        """Synchronize lower/upper overlay checkbox states in the summary panel."""
         if self._floor_summary_panel is not None:
-            self._floor_summary_panel.set_one_level_overlay_enabled(enabled)
+            self._floor_summary_panel.set_one_level_overlay_enabled(lower_enabled, upper_enabled)
 
     def apply_project_settings(self, settings: ProjectSettings) -> None:
         """Apply editable project settings to scene/view/panels."""

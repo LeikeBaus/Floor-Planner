@@ -1,120 +1,109 @@
-# Project architecture
+# Floor Planner
 
-Floor Planner/
-├── src/
-│   ├── app/
-│   |   ├── actions/
-|   |   |   ├── action_manager.py
-|   |   |   └── action_registry.py
-|   |   ├── application.py
-|   |   └── main.py
-|   ├── controller/
-|   |   ├── command_controller.py
-|   |   ├── drawing_controller.py
-|   |   ├── export_controller.py
-|   |   ├── project_controller.py
-|   |   ├── settings_controller.py
-|   |   ├── snap_controller.py
-|   |   └── tool_controller.py
-|   ├── export/
-|   |   └── exporter_registry.py
-|   ├── geometry/
-|   |   ├── area_comparison_engine.py
-|   |   ├── bounding_box.py
-|   |   ├── dimension_engine.py
-|   |   ├── living_area_engine.py
-|   |   ├── overlay_engine.py
-|   |   ├── point.py
-|   |   ├── roof_slope_engine.py
-|   |   ├── room_detector.py
-|   |   ├── snap_eninge.py
-|   |   └── vector.py
-|   ├── models/
-│   |   ├── state/
-|   |   |   └── project_state.py
-|   |   ├── building.py
-|   |   ├── dimension.py
-|   |   ├── door.py
-|   |   ├── floor_snapshot.py
-|   |   ├── floor.py
-|   |   ├── height_zone.py
-|   |   ├── opening.py
-|   |   ├── overlay.py
-|   |   ├── project_settings.py
-|   |   ├── project.py
-|   |   ├── roof_slope.py
-|   |   ├── room.py
-|   |   ├── stair.py
-|   |   ├── types.py
-|   |   ├── wall.py
-|   |   └── window.py
-|   ├── persistence/
-│   |   ├── migration_manager.py
-│   |   ├── project_loader.py
-│   |   └── project_saver.py
-|   ├── services/
-│   |   ├── exporters
-|   |   |   ├── comparison_pdf_exporter.py
-|   |   |   ├── floor_csv_exporter.py
-|   |   |   ├── floor_pdf_exporter.py
-|   |   |   ├── floor_png_exporter.py
-|   |   |   ├── floor_svg_exporter.py
-|   |   |   ├── floor_txt_exporter.py
-|   |   |   └── floor_xlsx_exporter.py
-│   |   ├── autosave_service.py
-│   |   ├── command_service.py
-│   |   ├── crash_recovery_service.py
-│   |   ├── drawing_service.py
-│   |   ├── export_service.py
-│   |   ├── project_service.py
-│   |   ├── settings_service.py
-│   |   ├── snap_service.py
-│   |   ├── snapshot_manager.py
-│   |   ├── wall_rendering_service.py
-│   |   └── wall_service
-|   ├── views/
-│   |   ├── dialogs/
-|   |   |   └── settings_dialog.py
-│   |   ├── factory/
-|   |   |   ├── dock_composer.py
-|   |   |   ├── dock_factory.py
-|   |   |   ├── main_view_factory.py
-|   |   |   └── scene_factory.py
-│   |   ├── main_window/
-|   |   |   └── main_window.py
-│   |   ├── objects/
-|   |   |   ├── dimension_graphics_item.py
-|   |   |   ├── door_graphics_item.py
-|   |   |   ├── height_zone_graphics_item.py
-|   |   |   ├── height_zone_legend.py
-|   |   |   ├── opening_graphics_item.py
-|   |   |   ├── overlay_graphics_item.py
-|   |   |   ├── roof_slope_graphics_item.py
-|   |   |   ├── room_graphics_item.py
-|   |   |   ├── stair_graphics_item.py
-|   |   |   ├── wall_graphics_item.py
-|   |   |   ├── wall_merged_graphics_item.py
-|   |   |   └── window_graphic_items.py
-│   |   ├── panels/
-|   |   |   ├── floor_summary_panel.py
-|   |   |   ├── object_properties_panel.py
-|   |   |   ├── project_tree_panel.py
-|   |   |   └── snapshot_history_panel.py
-│   |   ├── scene/
-|   |   |   ├── drawing_scene.py
-|   |   |   └── drawing_view.py
-│   |   └── widgets/
-|   |       ├── menubar.py
-|   |       ├── statusbar.py
-|   |       └── toolbar.py
-|   └── wiring/
-│       ├── action_wiring.py
-│       ├── drawing_wiring.py
-│       ├── project_wiring.py
-│       ├── settings_wiring.py
-│       ├── snapshot_wiring.py
-│       └── tool_wiring.py
-├── .gitignore
-├── main.py
-├── README.MD
-└── requirements.py
+## 1. Project Purpose
+Floor Planner is a desktop CAD-like floor planning application for quickly modeling residential layouts and deriving useful outputs from them. It focuses on practical planning workflows:
+
+- draw and edit walls, openings, windows, doors, stairs, and roof slopes
+- compute room, floor, and living areas
+- manage multiple levels in one project
+- export floor data and reports to several file formats
+
+## 2. Key Features
+- Multi-floor project model (Basement, Ground floor, First floor, Second floor)
+- Wall-based room detection and automatic area calculation
+- Height-zone and living-area calculations for sloped roofs
+- Manual and auto-generated dimensions
+- Undo/redo via command pattern (QUndoStack)
+- Overlay reference of adjacent levels (lower and upper, one level each)
+- Project snapshots, autosave, and crash-recovery support
+- Exports: PDF, CSV, PNG, SVG, XLSX, TXT, and area-comparison PDF
+
+## 3. Architecture
+The codebase follows a layered MVC + Service architecture:
+
+- Models: domain entities and state containers in src/models
+- Views: Qt widgets/graphics scene items in src/views
+- Controllers: UI orchestration and flow coordination in src/controllers
+- Services: business/domain logic in src/services
+- Wiring: explicit signal/slot composition in src/wiring
+- App bootstrap: dependency graph assembly in src/app/application.py
+
+### 3.1 Startup Flow
+1. main.py starts the Qt application.
+2. src/app/main.py creates Application.
+3. Application builds actions, services, controllers, and MainWindow.
+4. Wiring modules connect actions, controller signals, and view updates.
+5. MainWindow initializes the scene/view and dock panels.
+6. Default project interactions become available (new/open/save, tools, drawing).
+
+### 3.2 Wiring
+Wiring modules keep dependencies explicit and avoid hidden cross-layer coupling:
+
+- src/wiring/action_wiring.py: QAction -> controller/view entry points
+- src/wiring/project_wiring.py: project lifecycle + summary-panel overlay toggles
+- src/wiring/drawing_wiring.py: drawing-view status feedback to UI
+- src/wiring/snapshot_wiring.py: snapshot panel events to project controller
+- src/wiring/tool_wiring.py: default tool setup and project lifecycle tool reset
+
+### 3.3 Factories
+Factories isolate UI composition details and keep MainWindow focused:
+
+- src/views/factory/scene_factory.py creates the drawing scene
+- src/views/factory/main_view_factory.py creates menu/toolbar/statusbar/view
+- src/views/factory/dock_factory.py creates panel widgets
+- src/views/factory/dock_composer.py places dock widgets in the main window
+
+## 4. Development Setup
+### Python Version
+- Python 3.10+ required
+
+### Install
+```bash
+python -m venv .venv
+# Windows (PowerShell)
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+### Run
+```bash
+python main.py
+```
+
+### Validate
+```bash
+py -3 -m compileall src main.py
+```
+
+### Dependencies
+See requirements.txt. Core runtime dependencies include:
+- PyQt6
+- Shapely
+- numpy
+- openpyxl
+- reportlab
+
+## 5. Known Design Decisions and Trade-offs
+- Qt signal/slot orchestration over global event bus:
+	- Pro: explicit wiring, easier tracing
+	- Con: more boilerplate wiring code
+- Service layer for domain logic:
+	- Pro: testable and UI-independent business operations
+	- Con: additional indirection between UI and model updates
+- Recalculation-driven derived state (rooms/zones/dimensions) after geometry changes:
+	- Pro: consistent outputs
+	- Con: can cost more CPU on very large plans
+- Overlay references are limited to one adjacent floor above and below:
+	- Pro: simpler UX and predictable context
+	- Con: no direct multi-level stack visualization
+
+## 6. Future Improvements
+- Add unit/integration tests around room split/merge metadata retention
+- Improve room label placement with polygon-inside best-point heuristics
+- Add optional overlay styling controls per source level
+- Add project-level performance profiling for large floor plans
+- Introduce richer plugin/export extension hooks
+
+## 7. License
+No license file is currently included in this repository.
+

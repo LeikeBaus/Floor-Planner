@@ -83,11 +83,13 @@ class ProjectService:
         self,
         active_floor: Floor,
         all_floors: list[Floor],
-        enabled: bool,
+        show_lower: bool,
+        show_upper: bool,
     ) -> None:
+        """Configure one-level lower/upper floor overlays for the active floor."""
         active_floor.overlays.clear()
 
-        if not enabled:
+        if not show_lower and not show_upper:
             return
 
         try:
@@ -95,18 +97,27 @@ class ProjectService:
         except ValueError:
             return
 
-        if index == 0:
-            return
-
-        lower_floor = all_floors[index - 1]
-
-        active_floor.overlays.append(
-            Overlay(
-                active_floor_id=active_floor.id,
-                source_floor_id=lower_floor.id,
-                visible=True,
-                snap_enabled=True,
-                opacity=0.5,
+        if show_lower and index > 0:
+            lower_floor = all_floors[index - 1]
+            active_floor.overlays.append(
+                Overlay(
+                    active_floor_id=active_floor.id,
+                    source_floor_id=lower_floor.id,
+                    visible=True,
+                    snap_enabled=True,
+                    opacity=0.5,
+                )
             )
-        )
+
+        if show_upper and index < len(all_floors) - 1:
+            upper_floor = all_floors[index + 1]
+            active_floor.overlays.append(
+                Overlay(
+                    active_floor_id=active_floor.id,
+                    source_floor_id=upper_floor.id,
+                    visible=True,
+                    snap_enabled=True,
+                    opacity=0.5,
+                )
+            )
     

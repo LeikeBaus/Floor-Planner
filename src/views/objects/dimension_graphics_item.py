@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 
 from PyQt6.QtCore import QPointF, Qt
-from PyQt6.QtGui import QColor, QPen
+from PyQt6.QtGui import QColor, QPainterPath, QPainterPathStroker, QPen
 from PyQt6.QtWidgets import (
     QGraphicsItem,
     QGraphicsItemGroup,
@@ -60,6 +60,26 @@ class DimensionGraphicsItem(QGraphicsItemGroup):
         self.setOpacity(dimension.opacity)
         self.setZValue(5)
 
+    def shape(self) -> QPainterPath:
+        """Use line + label geometry for hit testing instead of broad group bounds."""
+        margin = self._selection_margin_scene_units()
+        stroke_width = max(2.0, margin * 2.0)
+
+        stroker = QPainterPathStroker()
+        stroker.setWidth(stroke_width)
+
+        hit_path = QPainterPath()
+        for line_item in [self._line_item, *self._helper_lines]:
+            line = line_item.line()
+            line_path = QPainterPath(QPointF(line.x1(), line.y1()))
+            line_path.lineTo(QPointF(line.x2(), line.y2()))
+            hit_path.addPath(stroker.createStroke(line_path))
+
+        text_rect = self._text_item.mapRectToParent(self._text_item.boundingRect())
+        padded_text_rect = text_rect.adjusted(-margin, -margin, margin, margin)
+        hit_path.addRect(padded_text_rect)
+        return hit_path
+
     def itemChange(
         self,
         change: QGraphicsItem.GraphicsItemChange,
@@ -113,3 +133,14 @@ class DimensionGraphicsItem(QGraphicsItemGroup):
         for helper in self._helper_lines:
             helper.setPen(helper_pen)
         self._text_item.setBrush(text_color)
+
+    def _selection_margin_scene_units(self) -> float:
+        """Return a zoom-aware scene margin so picking feels stable on all zoom levels."""
+        scene = self.scene()
+        if scene is None or not scene.views():
+            return 8.0
+
+        zoom_scale = max(0.01, scene.views()[0].transform().m11())
+        margin_px = 6.0
+        margin_scene = margin_px / zoom_scale
+        return max(2.0, min(30.0, margin_scene))

@@ -32,7 +32,7 @@ class ProjectController(QObject):
     snapshots_changed = pyqtSignal(list)
 
     # --- Settings -----------------------------------------------------------------------
-    project_settings_changed = pyqtSignal(object)
+    project_settings_changed = pyqtSignal(bool, bool)
 
     # --- Initialization -----------------------------------------------------------------
 
@@ -54,7 +54,6 @@ class ProjectController(QObject):
         self._project_state = project_state
         self._snapshot_manager = snapshot_manager
 
-        self._show_lower_level_overlay: bool = False
     
     # --- Action handlers ----------------------------------------------------------------
 
@@ -88,7 +87,10 @@ class ProjectController(QObject):
         self.window_title_changed.emit(
             "FloorPlanner - Untitled Project"
         )
-        self.project_settings_changed.emit(self._project_state.show_lower_level_overlay)
+        self.project_settings_changed.emit(
+            self._project_state.show_lower_level_overlay,
+            self._project_state.show_upper_level_overlay,
+        )
 
     def handle_open_project_action(
         self,
@@ -132,7 +134,10 @@ class ProjectController(QObject):
             f"FloorPlanner - {self._project_state.project.name}"
         )
         self.refresh_snapshot_list()
-        self.project_settings_changed.emit(self._project_state.show_lower_level_overlay)
+        self.project_settings_changed.emit(
+            self._project_state.show_lower_level_overlay,
+            self._project_state.show_upper_level_overlay,
+        )
 
     def handle_save_project_action(self) -> None:
         if (
@@ -197,6 +202,7 @@ class ProjectController(QObject):
             self._project_state.active_floor,
             floors,
             self._project_state.show_lower_level_overlay,
+            self._project_state.show_upper_level_overlay,
         )
 
         self._drawing_service.recalculate_floor(
@@ -281,5 +287,17 @@ class ProjectController(QObject):
     def handle_toggle_lower_level_overlay(self, enabled: bool) -> None:
         """Toggle lower-level overlay state and refresh active floor presentation."""
         self._project_state.show_lower_level_overlay = enabled
-        self.project_settings_changed.emit(enabled)
+        self.project_settings_changed.emit(
+            self._project_state.show_lower_level_overlay,
+            self._project_state.show_upper_level_overlay,
+        )
+        self._bind_active_floor()
+
+    def handle_toggle_upper_level_overlay(self, enabled: bool) -> None:
+        """Toggle upper-level overlay state and refresh active floor presentation."""
+        self._project_state.show_upper_level_overlay = enabled
+        self.project_settings_changed.emit(
+            self._project_state.show_lower_level_overlay,
+            self._project_state.show_upper_level_overlay,
+        )
         self._bind_active_floor()

@@ -9,3 +9,4 @@ def wire_project_signals(pc, ui):
 
     summary_panel = ui.get_floor_summary_panel()
     summary_panel.one_level_overlay_toggled.connect(pc.handle_toggle_lower_level_overlay)
+    summary_panel.upper_level_overlay_toggled.connect(pc.handle_toggle_upper_level_overlay)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from PyQt6.QtCore import QPointF
 from PyQt6.QtGui import QColor, QFont, QPen, QPolygonF
 from PyQt6.QtWidgets import (
@@ -12,6 +14,7 @@ from PyQt6.QtWidgets import (
 )
 
 from models.room import Room
+from geometry.point import Point
 
 
 class RoomGraphicsItem(QGraphicsItemGroup):
@@ -31,9 +34,9 @@ class RoomGraphicsItem(QGraphicsItemGroup):
         polygon_item.setPen(pen)
         self.addToGroup(polygon_item)
 
-        center = polygon.boundingRect().center()
-        label_x = center.x() + room.label_offset_x
-        label_y = center.y() + room.label_offset_y
+        label_anchor = _polygon_centroid(room.polygon)
+        label_x = label_anchor.x() + room.label_offset_x
+        label_y = label_anchor.y() + room.label_offset_y
 
         name_item = QGraphicsSimpleTextItem(room.name)
         name_font = QFont()
@@ -57,3 +60,33 @@ class RoomGraphicsItem(QGraphicsItemGroup):
         self.addToGroup(area_item)
 
         self.setZValue(-1)
+
+
+def _polygon_centroid(points: list[Point]) -> QPointF:
+    """Return robust polygon centroid, with a simple average fallback."""
+    if not points:
+        return QPointF(0.0, 0.0)
+
+    if len(points) < 3:
+        avg_x = sum(point.x for point in points) / len(points)
+        avg_y = sum(point.y for point in points) / len(points)
+        return QPointF(avg_x, avg_y)
+
+    signed_area = 0.0
+    cx = 0.0
+    cy = 0.0
+
+    for index, point in enumerate(points):
+        next_point = points[(index + 1) % len(points)]
+        cross = point.x * next_point.y - next_point.x * point.y
+        signed_area += cross
+        cx += (point.x + next_point.x) * cross
+        cy += (point.y + next_point.y) * cross
+
+    if math.isclose(signed_area, 0.0, abs_tol=1e-9):
+        avg_x = sum(point.x for point in points) / len(points)
+        avg_y = sum(point.y for point in points) / len(points)
+        return QPointF(avg_x, avg_y)
+
+    factor = 1.0 / (3.0 * signed_area)
+    return QPointF(cx * factor, cy * factor)

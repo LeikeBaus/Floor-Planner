@@ -13,3 +13,4 @@ class ProjectState:
     project_file_path: Path | None = None
 
     show_lower_level_overlay: bool = False
+    show_upper_level_overlay: bool = False
