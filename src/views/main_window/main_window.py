@@ -1,7 +1,9 @@
 """main_window.py"""
 from __future__ import annotations
 
-from PyQt6.QtGui import QUndoStack
+from collections.abc import Callable
+
+from PyQt6.QtGui import QCloseEvent, QUndoStack
 from PyQt6.QtWidgets import QMainWindow
 
 from app.actions.action_manager import ActionManager
@@ -40,6 +42,8 @@ class MainWindow(QMainWindow):
         self._floor_summary_panel = None
         self._project: Project | None = None
         self._docks: dict[str, object] = {}
+        self._manual_dirty: bool = False
+        self._close_request_handler: Callable[[], bool] | None = None
 
         self._init_ui()
 
@@ -122,6 +126,23 @@ class MainWindow(QMainWindow):
 
     def get_undo_stack(self) -> QUndoStack:
         return self._undo_stack
+
+    def set_close_request_handler(self, handler: Callable[[], bool]) -> None:
+        """Set callback that decides whether window close should proceed."""
+        self._close_request_handler = handler
+
+    def has_unsaved_changes(self) -> bool:
+        """Return whether current project has unsaved changes."""
+        return self._manual_dirty or (not self._undo_stack.isClean())
+
+    def mark_project_dirty(self) -> None:
+        """Mark project as dirty for non-undo-stack model changes."""
+        self._manual_dirty = True
+
+    def mark_project_clean(self) -> None:
+        """Mark project as clean after successful save/load/new operations."""
+        self._manual_dirty = False
+        self._undo_stack.setClean()
 
     def set_grid_enabled(self, enabled: bool) -> None:
         if self._drawing_scene is None:
@@ -227,6 +248,7 @@ class MainWindow(QMainWindow):
             self._project_tree_panel.set_project(project, active_floor)
         if self._floor_summary_panel is not None:
             self._floor_summary_panel.update_floor_info(active_floor)
+        self.mark_project_clean()
 
     def on_active_floor_changed(self, floor: Floor, _available_floors: list[Floor]) -> None:
         """Apply floor-level panel updates whenever active floor changes."""
@@ -274,6 +296,7 @@ class MainWindow(QMainWindow):
         self._action_manager.placement_actions.setEnabled(enabled)
         self._action_manager.floor_actions.setEnabled(enabled)
         self._action_manager.undo_redo_actions.setEnabled(enabled)
+        self._action_manager.delete_actions.setEnabled(enabled)
         self._action_manager.get_action(ActionID.SAVE_PROJECT).setEnabled(enabled)
 
         if enabled:
@@ -291,6 +314,18 @@ class MainWindow(QMainWindow):
             return
         has_selection = bool(self._drawing_scene.selectedItems())
         self._action_manager.get_action(ActionID.DELETE).setEnabled(has_selection)
+
+    def closeEvent(self, event: QCloseEvent | None) -> None:  # noqa: N802
+        """Guard window close when caller registered a close confirmation handler."""
+        if event is None:
+            return
+        if self._close_request_handler is None:
+            event.accept()
+            return
+        if self._close_request_handler():
+            event.accept()
+            return
+        event.ignore()
 
     def _on_dock_visibility_changed(self, panel: str, visible: bool) -> None:
         action_id = {

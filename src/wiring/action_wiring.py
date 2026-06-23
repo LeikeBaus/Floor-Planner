@@ -1,4 +1,5 @@
 from app.actions.action_registry import ActionID
+from PyQt6.QtWidgets import QMessageBox
 from services.file_dialog_service import FileDialogService
 from views.dialogs.settings_dialog import SettingsDialog
 
@@ -16,6 +17,40 @@ def wire_actions(action_manager, controllers, main_window, project_state):
     
     get = action_manager.get_action
     file_dialog_service = FileDialogService(main_window)
+
+    def _save_current_project() -> bool:
+        if pc.needs_save_path():
+            path = file_dialog_service.pick_save_project_path()
+            if path is None:
+                return False
+            pc.handle_save_project_as_action(path)
+        else:
+            pc.handle_save_project_action()
+        main_window.mark_project_clean()
+        return True
+
+    def _confirm_discard_or_save_changes(action_description: str) -> bool:
+        if project_state.project is None or not main_window.has_unsaved_changes():
+            return True
+
+        choice = QMessageBox.question(
+            main_window,
+            "Unsaved Changes",
+            (
+                f"You have unsaved changes.\n"
+                f"Do you want to save before you {action_description}?"
+            ),
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Save,
+        )
+
+        if choice == QMessageBox.StandardButton.Save:
+            return _save_current_project()
+        if choice == QMessageBox.StandardButton.Discard:
+            return True
+        return False
 
     def _handle_export_floor(export_format: str) -> None:
         floor = project_state.active_floor
@@ -44,6 +79,27 @@ def wire_actions(action_manager, controllers, main_window, project_state):
         main_window.apply_project_settings(updated)
         dc.recalculate_floor(project, floor)
         main_window.refresh_active_floor_view()
+        main_window.mark_project_dirty()
+
+    def _handle_new_project_action() -> None:
+        if not _confirm_discard_or_save_changes("create a new project"):
+            return
+        pc.handle_new_project_action()
+        main_window.mark_project_clean()
+
+    def _handle_open_project_action() -> None:
+        if not _confirm_discard_or_save_changes("open another project"):
+            return
+        path = file_dialog_service.pick_open_project_path()
+        if path is None:
+            return
+        pc.handle_open_project_action(path)
+        main_window.mark_project_clean()
+
+    def _handle_close_request() -> bool:
+        return _confirm_discard_or_save_changes("close the project")
+
+    main_window.set_close_request_handler(_handle_close_request)
 
     # --- Command wiring -----------------------------------------------------------------
     get(ActionID.UNDO).triggered.connect(lambda _checked=False: main_window.perform_undo())
@@ -68,25 +124,9 @@ def wire_actions(action_manager, controllers, main_window, project_state):
     get(ActionID.CREATE_SNAPSHOT).triggered.connect(lambda _checked=False: pc.handle_create_snapshot_action())
 
     # --- Project wiring -----------------------------------------------------------------
-    get(ActionID.NEW_PROJECT).triggered.connect(lambda _checked=False: pc.handle_new_project_action())
-    get(ActionID.OPEN_PROJECT).triggered.connect(
-        lambda _checked=False: (
-            pc.handle_open_project_action(path)
-            if (path := file_dialog_service.pick_open_project_path()) is not None
-            else None
-        )
-    )
-    get(ActionID.SAVE_PROJECT).triggered.connect(
-        lambda _checked=False: (
-            pc.handle_save_project_action()
-            if not pc.needs_save_path()
-            else (
-                pc.handle_save_project_as_action(path)
-                if (path := file_dialog_service.pick_save_project_path()) is not None
-                else None
-            )
-        )
-    )
+    get(ActionID.NEW_PROJECT).triggered.connect(lambda _checked=False: _handle_new_project_action())
+    get(ActionID.OPEN_PROJECT).triggered.connect(lambda _checked=False: _handle_open_project_action())
+    get(ActionID.SAVE_PROJECT).triggered.connect(lambda _checked=False: _save_current_project())
     get(ActionID.BASEMENT).triggered.connect(lambda _checked=False: pc.handle_switch_floor_action("Basement"))
     get(ActionID.GROUND_FLOOR).triggered.connect(lambda _checked=False: pc.handle_switch_floor_action("Ground floor"))
     get(ActionID.FIRST_FLOOR).triggered.connect(lambda _checked=False: pc.handle_switch_floor_action("First floor"))

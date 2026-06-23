@@ -530,12 +530,24 @@ class DrawingView(QGraphicsView):
 
         point = self._snap_to_angle(self._wall_start_point, point)
 
-        wall = self._wall_service.create_wall(
-            start=self._wall_start_point,
-            end=point,
-            thickness=self._current_wall_thickness(),
-            wall_type=self._current_wall_type,
-        )
+        thickness = self._current_wall_thickness()
+        dx = point.x - self._wall_start_point.x
+        dy = point.y - self._wall_start_point.y
+        length_mm = math.hypot(dx, dy)
+        if thickness <= 0.0 or length_mm <= 1e-6:
+            self._reset_wall_drawing_state()
+            return
+
+        try:
+            wall = self._wall_service.create_wall(
+                start=self._wall_start_point,
+                end=point,
+                thickness=thickness,
+                wall_type=self._current_wall_type,
+            )
+        except ValueError:
+            self._reset_wall_drawing_state()
+            return
 
         command = CreateWallCommand(
             floor=floor,
