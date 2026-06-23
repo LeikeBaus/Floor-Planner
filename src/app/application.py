@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import sys
 
-from PyQt6.QtWidgets import QApplication, QMessageBox
-
 from app.actions.action_manager import ActionManager
-from app.actions.action_registry import ActionID
 from controllers.command_controller import CommandController
 from controllers.drawing_controller import DrawingController
 from controllers.export_controller import ExportController
@@ -26,7 +23,18 @@ from services.crash_recovery_service import CrashRecoveryService
 from services.project_service import ProjectService
 from services.settings_service import SettingsService
 from services.snapshot_manager import SnapshotManager
+from views.factory.dock_factory import DockFactory
+from views.factory.main_view_factory import MainViewFactory
+from views.factory.scene_factory import SceneFactory
 from views.main_window.main_window import MainWindow
+from wiring.action_wiring import wire_actions
+from wiring.drawing_wiring import wire_drawing_signals
+from wiring.project_wiring import wire_project_signals
+from wiring.settings_wiring import wire_settings_signals
+from wiring.snapshot_wiring import wire_snapshot_signals
+from wiring.tool_wiring import wire_tool_signals
+
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
 
 class FloorPlannerApplication:
@@ -41,203 +49,56 @@ class FloorPlannerApplication:
     def run(self) -> int:
         """Start Qt event loop and return process exit code."""
         self._qt_app = QApplication(sys.argv)
-        self._project_state = ProjectState()
-
-        # Services
-        self.autosave_service = AutosaveService(self._project_saver)
-        self.command_service = CommandService()
-        self.drawing_service = DrawingService()
-        self.export_service = ExportService()
-        self.project_service = ProjectService(
-            loader=self._project_loader,
-            saver=self._project_saver
-            )
-        self.settings_service = SettingsService()
-        self.snapshot_manager = SnapshotManager()
-
-        # Controllers
-        self.action_manager = ActionManager()
-        self.command_controller = CommandController()
-        self.drawing_controller = DrawingController(self.drawing_service)
-        self.export_controller = ExportController(self.export_service)
-        self.project_controller = ProjectController(
-            autosave_service=self.autosave_service,
-            command_service=self.command_service,
-            drawing_service=self.drawing_service,
-            project_service=self.project_service,
-            project_state=self._project_state,
-            snapshot_manager=self.snapshot_manager,
-        )
-        self.settings_controller = SettingsController(self.settings_service)
-        self.snap_controller = SnapController()
-        self.tool_controller = ToolController()
-
-        # Main window
-        self._main_window = MainWindow(self.action_manager)
-        self._connect_actions() # Connect User Actions to Controller Methods
-        self._connect_signals() # Connect Controller Signals to View Slots
+        self._build_services()
+        self._build_controllers()
+        self._main_window = MainWindow(self._action_manager)
+        print("UI built.")
+        self._wire_all()
+        print("Signals wired.")
         self._process_crash_recovery()
         self._main_window.show()
         return self._qt_app.exec()
     
-    def _connect_actions(self) -> None:
-        """Connect actions to their respective controller methods."""
-        main_window = self._main_window
-        if main_window is None:
-            return
+    def _build_services(self) -> None:
+        self._action_manager = ActionManager()
+        self._project_state = ProjectState()
 
-        get_action = self.action_manager.get_action
+        self._autosave_service = AutosaveService(self._project_saver)
+        self._command_service = CommandService()
+        self._drawing_service = DrawingService()
+        self._export_service = ExportService()
+        self._project_service = ProjectService()
+        self._settings_service = SettingsService()
+        self._snapshot_manager = SnapshotManager()
 
-        get_action(ActionID.NEW_PROJECT).triggered.connect(
-            lambda _checked=False: self.project_controller.handle_new_project_action()
+    def _build_controllers(self) -> None:
+        self._command_controller = CommandController(self._command_service)
+        self._drawing_controller = DrawingController(self._drawing_service)
+        self._export_controller = ExportController(self._export_service)
+        self._project_controller = ProjectController(
+            self._autosave_service,
+            self._command_service,
+            self._drawing_service,
+            self._project_service,
+            self._project_state,
+            self._snapshot_manager,
         )
-        get_action(ActionID.OPEN_PROJECT).triggered.connect(
-            lambda _checked=False: self.project_controller.handle_open_project_action()
-        )
-        get_action(ActionID.SAVE_PROJECT).triggered.connect(
-            lambda _checked=False: self.project_controller.handle_save_project_action()
-        )
+        self._settings_controller = SettingsController(self._settings_service)
+        self._snap_controller = SnapController()
+        self._tool_controller = ToolController()
 
-        get_action(ActionID.EXPORT_PDF).triggered.connect(
-            lambda _checked=False: self.export_controller.handle_export_floor_action(
-                main_window, "pdf"
-            )
-        )
-        get_action(ActionID.EXPORT_CSV).triggered.connect(
-            lambda _checked=False: self.export_controller.handle_export_floor_action(
-                main_window, "csv"
-            )
-        )
-        get_action(ActionID.EXPORT_PNG).triggered.connect(
-            lambda _checked=False: self.export_controller.handle_export_floor_action(
-                main_window, "png"
-            )
-        )
-        get_action(ActionID.EXPORT_SVG).triggered.connect(
-            lambda _checked=False: self.export_controller.handle_export_floor_action(
-                main_window, "svg"
-            )
-        )
-        get_action(ActionID.EXPORT_XLSX).triggered.connect(
-            lambda _checked=False: self.export_controller.handle_export_floor_action(
-                main_window, "xlsx"
-            )
-        )
-        get_action(ActionID.EXPORT_TXT).triggered.connect(
-            lambda _checked=False: self.export_controller.handle_export_floor_action(
-                main_window, "txt"
-            )
-        )
-        get_action(ActionID.EXPORT_AREA_COMPARISON).triggered.connect(
-            lambda _checked=False: self.export_controller.handle_export_comparison_action(
-                main_window
-            )
-        )
-        get_action(ActionID.CREATE_SNAPSHOT).triggered.connect(
-            lambda _checked=False: self.export_controller.handle_create_snapshot_action(main_window)
-        )
+        self._controllers = {
+            "command": self._command_controller,
+            "drawing": self._drawing_controller,
+            "export": self._export_controller,
+            "project": self._project_controller,
+            "settings": self._settings_controller,
+            "snap": self._snap_controller,
+            "tool": self._tool_controller,
+        }
 
-        get_action(ActionID.UNDO).triggered.connect(
-            lambda _checked=False: self.command_controller.handle_undo_action(main_window)
-        )
-        get_action(ActionID.REDO).triggered.connect(
-            lambda _checked=False: self.command_controller.handle_redo_action(main_window)
-        )
-        get_action(ActionID.DELETE).triggered.connect(
-            lambda _checked=False: self.command_controller.handle_delete_action(main_window)
-        )
-
-        get_action(ActionID.SETTINGS).triggered.connect(
-            lambda _checked=False: self.settings_controller.handle_open_settings_action(main_window)
-        )
-        get_action(ActionID.TOGGLE_GRID).triggered.connect(
-            lambda enabled=False: self.settings_controller.handle_toggle_grid_action(
-                main_window, enabled
-            )
-        )
-        get_action(ActionID.TOGGLE_SNAP).triggered.connect(
-            lambda enabled=False: self.settings_controller.handle_toggle_snap_action(
-                main_window, enabled
-            )
-        )
-        get_action(ActionID.DEBUG_SNAP_MODE).triggered.connect(
-            lambda enabled=False: self.snap_controller.handle_toggle_debug_snap_action(
-                main_window, enabled
-            )
-        )
-        get_action(ActionID.SHOW_DIMENSIONS).triggered.connect(
-            lambda enabled=False: self.settings_controller.handle_toggle_dimensions_action(
-                main_window, enabled
-            )
-        )
-        get_action(ActionID.SHOW_HEIGHT_ZONES).triggered.connect(
-            lambda enabled=False: self.settings_controller.handle_toggle_height_zones_action(
-                main_window, enabled
-            )
-        )
-
-        get_action(ActionID.SELECT).triggered.connect(
-            lambda _checked=False: self.tool_controller.handle_tool_action("select")
-        )
-        get_action(ActionID.WALL).triggered.connect(
-            lambda _checked=False: self.tool_controller.handle_tool_action("wall_exterior")
-        )
-        get_action(ActionID.INTERIOR_WALL).triggered.connect(
-            lambda _checked=False: self.tool_controller.handle_tool_action("wall_interior")
-        )
-        get_action(ActionID.DIMENSION).triggered.connect(
-            lambda _checked=False: self.tool_controller.handle_tool_action("dimension")
-        )
-        get_action(ActionID.WINDOW).triggered.connect(
-            lambda _checked=False: self.tool_controller.handle_tool_action("window")
-        )
-        get_action(ActionID.DOOR).triggered.connect(
-            lambda _checked=False: self.tool_controller.handle_tool_action("door")
-        )
-        get_action(ActionID.OPENING).triggered.connect(
-            lambda _checked=False: self.tool_controller.handle_tool_action("opening")
-        )
-        get_action(ActionID.STAIR).triggered.connect(
-            lambda _checked=False: self.tool_controller.handle_tool_action("stair")
-        )
-        get_action(ActionID.ROOF_SLOPE).triggered.connect(
-            lambda _checked=False: self.tool_controller.handle_tool_action("roof_slope")
-        )
-
-        get_action(ActionID.BASEMENT).triggered.connect(
-            lambda _checked=False: self.project_controller.handle_switch_floor_action(
-                main_window, "Basement"
-            )
-        )
-        get_action(ActionID.GROUND_FLOOR).triggered.connect(
-            lambda _checked=False: self.project_controller.handle_switch_floor_action(
-                main_window, "Ground floor"
-            )
-        )
-        get_action(ActionID.FIRST_FLOOR).triggered.connect(
-            lambda _checked=False: self.project_controller.handle_switch_floor_action(
-                main_window, "First floor"
-            )
-        )
-        get_action(ActionID.SECOND_FLOOR).triggered.connect(
-            lambda _checked=False: self.project_controller.handle_switch_floor_action(
-                main_window, "Second floor"
-            )
-        )
-    
-    def _connect_signals(self) -> None:
-        """Connect controller signals to UI components."""
-        win = self._main_window
-        pc = self.project_controller
-        if win is None:
-            return
-
-        # --- Project lifecycle signals ------------------------------------------------------
-        pc.project_created.connect(win.load_new_project)
-        pc.project_loaded.connect(win.load_project)
-        pc.window_title_changed.connect(
-            win.setWindowTitle
-        )
+    def _wire_all(self) -> None:
+        wire_actions(self._action_manager, self._controllers, self._main_window)
 
     def _process_crash_recovery(self) -> None:
         """Detect and optionally restore autosaved recovery files on startup."""

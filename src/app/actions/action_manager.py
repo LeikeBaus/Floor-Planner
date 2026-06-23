@@ -3,8 +3,8 @@ from app.actions.action_registry import ActionID
 
 class ActionManager:
 
-    def __init__(self):
-
+    def __init__(self) -> None:
+        
         self.actions: dict[ActionID, QAction] = {}
         self._create_actions()
 
