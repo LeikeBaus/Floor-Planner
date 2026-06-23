@@ -93,6 +93,7 @@ Floor Planner/
 │   |   ├── dialogs/
 |   |   |   └── settings_dialog.py
 │   |   ├── factory/
+|   |   |   ├── dock_composer.py
 |   |   |   ├── dock_factory.py
 |   |   |   ├── main_view_factory.py
 |   |   |   └── scene_factory.py

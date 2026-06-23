@@ -6,9 +6,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
-from models.floor import Floor
 from models.floor_snapshot import FloorSnapshot
-from models.project import Project
 from models.state.project_state import ProjectState
 from services.autosave_service import AutosaveService
 from services.command_service import CommandService

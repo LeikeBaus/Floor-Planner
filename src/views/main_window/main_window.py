@@ -1,13 +1,12 @@
 """main_window.py"""
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QMainWindow, QWidget, QDockWidget
+from PyQt6.QtWidgets import QMainWindow
 
 from app.actions.action_manager import ActionManager
-
 from views.factory.main_view_factory import MainViewFactory
 from views.factory.scene_factory import SceneFactory
+from views.factory.dock_composer import DockComposer
 from views.factory.dock_factory import DockFactory
 
 
@@ -18,7 +17,6 @@ class MainWindow(QMainWindow):
     Responsibility:
     - Assemble UI components via factories
     - Provide access points for wiring layer
-    - No business logic
     """
 
     def __init__(self, action_manager: ActionManager) -> None:
@@ -26,7 +24,7 @@ class MainWindow(QMainWindow):
 
         self._action_manager = action_manager
 
-        # UI references (needed for wiring)
+        # UI references
         self._drawing_scene = None
         self._drawing_view = None
 
@@ -37,9 +35,7 @@ class MainWindow(QMainWindow):
 
         self._init_ui()
 
-    # ------------------------------------------------------------
-    # UI BUILD
-    # ------------------------------------------------------------
+    # --- UI build  -------------------------------------------------------------
 
     def _init_ui(self) -> None:
         self.setWindowTitle("FloorPlanner")
@@ -53,42 +49,31 @@ class MainWindow(QMainWindow):
         Central drawing area (Scene + View).
         """
         self._drawing_scene = SceneFactory.create()
-        self._drawing_view = MainViewFactory.create_drawing_view(
-            self._drawing_scene
-        )
-
+        self._drawing_view = MainViewFactory.create_drawing_view(self._drawing_scene)
         self.setCentralWidget(self._drawing_view)
 
     def _build_menus_and_bars(self) -> None:
         """
-        MenuBar + ToolBar + StatusBar.
+        Menu bar, tool bar, status bar.
         """
-        self.setMenuBar(
-            MainViewFactory.create_menu_bar(self._action_manager)
-        )
-
-        self.addToolBar(
-            MainViewFactory.create_tool_bar(self._action_manager)
-        )
-
-        self.setStatusBar(
-            MainViewFactory.create_status_bar()
-        )
+        self.setMenuBar(MainViewFactory.create_menu_bar(self._action_manager))
+        self.addToolBar(MainViewFactory.create_tool_bar(self._action_manager))
+        self.setStatusBar(MainViewFactory.create_status_bar())
 
     def _build_docks(self) -> None:
         """
         Dock widgets (project tree, properties, snapshots, summary).
         """
-        dock_bundle = DockFactory.create_all(self)
+        widgets = DockFactory.create_widgets()
+        composer = DockComposer(self)
+        composer.compose(widgets)
 
-        self._project_tree_panel = dock_bundle.project_tree
-        self._snapshot_history_panel = dock_bundle.snapshot_history
-        self._properties_panel = dock_bundle.properties
-        self._floor_summary_panel = dock_bundle.floor_summary
+        self._project_tree_panel = widgets.project_tree
+        self._snapshot_history_panel = widgets.snapshot_history
+        self._properties_panel = widgets.properties
+        self._floor_summary_panel = widgets.floor_summary
 
-    # ------------------------------------------------------------
-    # PUBLIC ACCESSORS (for wiring layer)
-    # ------------------------------------------------------------
+    # --- Public accessors ---------------------------------------------------
 
     def get_scene(self):
         return self._drawing_scene
@@ -107,10 +92,8 @@ class MainWindow(QMainWindow):
 
     def get_floor_summary_panel(self):
         return self._floor_summary_panel
-
-    # ------------------------------------------------------------
-    # STATE UPDATE HELPERS (called by wiring layer)
-    # ------------------------------------------------------------
+    
+    # --- State update helpers ---------------------------------------------------
 
     def set_window_title(self, title: str) -> None:
         self.setWindowTitle(title)

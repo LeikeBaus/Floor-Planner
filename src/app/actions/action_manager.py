@@ -87,6 +87,9 @@ class ActionManager:
         self.grid_actions.setExclusive(False)
         for action in self.grid_actions.actions():
             action.setCheckable(True)
+        self.actions[ActionID.TOGGLE_GRID].setChecked(True)
+        self.actions[ActionID.TOGGLE_SNAP].setChecked(True)
+        self.actions[ActionID.SHOW_DIMENSIONS].setChecked(True)
 
         # View actions
         self.view_actions = QActionGroup(None)
@@ -101,6 +104,7 @@ class ActionManager:
         self.view_actions.setExclusive(False)
         for action in self.view_actions.actions():
             action.setCheckable(True)
+            action.setChecked(True)
 
         # Actions for placing objects
         self.placement_actions = QActionGroup(None)
