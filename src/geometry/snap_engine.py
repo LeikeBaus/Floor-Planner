@@ -30,7 +30,7 @@ class SnapEngine:
         base_distance: float,
         zoom_scale: float,
         min_distance: float = 5.0,
-        max_distance: float = 20.0,
+        max_distance: float = 1200.0,
     ) -> float:
         """Return zoom-adjusted snap distance constrained to safe bounds."""
         safe_zoom = max(zoom_scale, 0.01)

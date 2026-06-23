@@ -1021,7 +1021,7 @@ class DrawingScene(QGraphicsScene):
 
         radius = self._marker_radius_scene(zoom_scale) * 1.4
         pen = QPen(QColor("#F59E0B"))
-        pen.setWidthF(max(1.5, radius * 0.2))
+        pen.setWidthF(max(1.5, radius))
         painter.setPen(pen)
         painter.setBrush(QBrush(QColor(245, 158, 11, 120)))
         painter.drawEllipse(QPointF(self._debug_snap_point.x, self._debug_snap_point.y), radius, radius)
@@ -1056,7 +1056,7 @@ class DrawingScene(QGraphicsScene):
 
     def _marker_radius_scene(self, zoom_scale: float) -> float:
         """Return a scene radius whose screen size grows moderately with zoom."""
-        desired_screen_radius = max(4.0, min(12.0, 6.0 * (zoom_scale ** 0.35)))
+        desired_screen_radius = max(5.0, min(7.0, 6.0 * (zoom_scale ** 0.35)))
         return desired_screen_radius / max(0.01, zoom_scale)
 
     def _wall_edge_midpoints(self, wall: Wall) -> list[Point]:

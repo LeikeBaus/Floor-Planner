@@ -1024,9 +1024,8 @@ class DrawingView(QGraphicsView):
             centerline_segments,
         )
 
-    def _walls_for_snap(self, scene: DrawingScene) -> list[Wall]:
+    def _walls_for_snap(self) -> list[Wall]:
         """Return walls from the active floor for snapping."""
-        _unused_scene = scene
         return self._snap_service.walls_for_snap(self)
 
     def _wall_outline_points(self, wall: Wall) -> list[Point]:

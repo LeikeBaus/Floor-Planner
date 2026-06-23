@@ -23,9 +23,6 @@ from services.crash_recovery_service import CrashRecoveryService
 from services.project_service import ProjectService
 from services.settings_service import SettingsService
 from services.snapshot_manager import SnapshotManager
-from views.factory.dock_factory import DockFactory
-from views.factory.main_view_factory import MainViewFactory
-from views.factory.scene_factory import SceneFactory
 from views.main_window.main_window import MainWindow
 from wiring.action_wiring import wire_actions
 from wiring.drawing_wiring import wire_drawing_signals

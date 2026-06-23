@@ -35,6 +35,7 @@ class SnapService:
         context = self._view_context(view)
         if context is None or not self._logic.is_snap_enabled():
             self._publish_debug_snap_point(view, None)
+            print(f"Snapping disabled or no context; returning original point: ({point.x:.2f}, {point.y:.2f})")
             return point
 
         snap_distance = self._logic.dynamic_snap_distance(self._view_zoom_scale(view))
