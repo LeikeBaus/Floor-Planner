@@ -143,6 +143,11 @@ class DrawingScene(QGraphicsScene):
         for height_zone in self._active_floor.height_zones:
             self.add_height_zone_item(height_zone)
 
+    def set_height_zones_visibility(self, visible: bool) -> None:
+        """Set global height-zone visibility."""
+        for item in self._height_zone_items_by_id.values():
+            item.setVisible(visible)
+
     def add_height_zone_item(self, height_zone: HeightZone) -> None:
         """Add or refresh a height zone graphics item by model identifier."""
         existing = self._height_zone_items_by_id.get(height_zone.id)
@@ -386,6 +391,102 @@ class DrawingScene(QGraphicsScene):
         existing = self._roof_slope_items_by_id.pop(roof_slope.id, None)
         if existing is not None:
             self.removeItem(existing)
+
+    def on_wall_created(self, wall: Wall) -> None:
+        """DrawingView command callback for wall creation."""
+        self.add_wall_item(wall)
+        self.refresh_rooms()
+        self.refresh_dimensions()
+
+    def on_wall_deleted(self, wall: Wall) -> None:
+        """DrawingView command callback for wall deletion."""
+        self.remove_wall_item(wall)
+        self.refresh_rooms()
+        self.refresh_dimensions()
+
+    def on_wall_updated(self, wall: Wall) -> None:
+        """DrawingView command callback for wall update."""
+        self.refresh_wall_item(wall)
+        self.refresh_windows()
+        self.refresh_doors()
+        self.refresh_openings()
+        self.refresh_rooms()
+        self.refresh_dimensions()
+
+    def on_dimension_created(self, dimension: Dimension) -> None:
+        """DrawingView command callback for dimension creation."""
+        self.add_dimension_item(dimension)
+
+    def on_dimension_deleted(self, dimension: Dimension) -> None:
+        """DrawingView command callback for dimension deletion."""
+        self.remove_dimension_item(dimension)
+
+    def on_dimension_updated(self, dimension: Dimension) -> None:
+        """DrawingView command callback for dimension update."""
+        self.add_dimension_item(dimension)
+
+    def on_window_created(self, window: Window) -> None:
+        """DrawingView command callback for window creation."""
+        self.refresh_windows()
+
+    def on_window_deleted(self, window: Window) -> None:
+        """DrawingView command callback for window deletion."""
+        self.remove_window_item(window)
+
+    def on_window_updated(self, window: Window) -> None:
+        """DrawingView command callback for window update."""
+        self.refresh_windows()
+
+    def on_door_created(self, door: Door) -> None:
+        """DrawingView command callback for door creation."""
+        self.refresh_doors()
+
+    def on_door_deleted(self, door: Door) -> None:
+        """DrawingView command callback for door deletion."""
+        self.remove_door_item(door)
+
+    def on_door_updated(self, door: Door) -> None:
+        """DrawingView command callback for door update."""
+        self.refresh_doors()
+
+    def on_opening_created(self, opening: Opening) -> None:
+        """DrawingView command callback for opening creation."""
+        self.refresh_openings()
+
+    def on_opening_deleted(self, opening: Opening) -> None:
+        """DrawingView command callback for opening deletion."""
+        self.remove_opening_item(opening)
+
+    def on_opening_updated(self, opening: Opening) -> None:
+        """DrawingView command callback for opening update."""
+        self.refresh_openings()
+
+    def on_stair_created(self, stair: Stair) -> None:
+        """DrawingView command callback for stair creation."""
+        self.add_stair_item(stair)
+
+    def on_stair_deleted(self, stair: Stair) -> None:
+        """DrawingView command callback for stair deletion."""
+        self.remove_stair_item(stair)
+
+    def on_stair_updated(self, stair: Stair) -> None:
+        """DrawingView command callback for stair update."""
+        self.add_stair_item(stair)
+
+    def on_roof_slope_created(self, roof_slope: RoofSlope) -> None:
+        """DrawingView command callback for roof slope creation."""
+        self.add_roof_slope_item(roof_slope)
+        self.refresh_height_zones()
+
+    def on_roof_slope_deleted(self, roof_slope: RoofSlope) -> None:
+        """DrawingView command callback for roof slope deletion."""
+        self.remove_roof_slope_item(roof_slope)
+        self.refresh_height_zones()
+
+    def on_roof_slope_updated(self, roof_slope: RoofSlope) -> None:
+        """DrawingView command callback for roof slope update."""
+        self.add_roof_slope_item(roof_slope)
+        self.refresh_height_zones()
 
     def selected_walls(self) -> list[Wall]:
         """Return model walls represented by selected wall graphics items."""

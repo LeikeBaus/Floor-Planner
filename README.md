@@ -1,21 +1,3 @@
-# Beispiel-Datenfluss für Floor change
-
-Action (Ground floor)
-    ↓
-ProjectController.handle_switch_floor()
-    ↓
-ProjectService.find_floor()
-    ↓
-State.active_floor = floor
-    ↓
-signal: active_floor_changed
-    ↓
-DrawingScene.set_active_floor()
-Toolbar.sync()
-SnapService.update()
-
-
-
 # Project architecture
 
 Floor Planner/
@@ -71,18 +53,19 @@ Floor Planner/
 │   |   ├── project_loader.py
 │   |   └── project_saver.py
 |   ├── services/
+│   |   ├── exporters
+|   |   |   ├── comparison_pdf_exporter.py
+|   |   |   ├── floor_csv_exporter.py
+|   |   |   ├── floor_pdf_exporter.py
+|   |   |   ├── floor_png_exporter.py
+|   |   |   ├── floor_svg_exporter.py
+|   |   |   ├── floor_txt_exporter.py
+|   |   |   └── floor_xlsx_exporter.py
 │   |   ├── autosave_service.py
 │   |   ├── command_service.py
-│   |   ├── comparison_pdf_exporter.py
 │   |   ├── crash_recovery_service.py
 │   |   ├── drawing_service.py
 │   |   ├── export_service.py
-│   |   ├── floor_csv_exporter.py
-│   |   ├── floor_pdf_exporter.py
-│   |   ├── floor_png_exporter.py
-│   |   ├── floor_svg_exporter.py
-│   |   ├── floor_txt_exporter.py
-│   |   ├── floor_xlsx_exporter.py
 │   |   ├── project_service.py
 │   |   ├── settings_service.py
 │   |   ├── snap_service.py

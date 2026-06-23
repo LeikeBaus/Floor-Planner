@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QPolygonF
 
-from controllers.command_controller import (
+from models.commands import (
     CreateDimensionCommand,
     CreateDoorCommand,
     CreateOpeningCommand,
@@ -23,6 +23,7 @@ from controllers.command_controller import (
     CreateStairCommand,
     CreateWallCommand,
     CreateWindowCommand,
+    DeleteFloorSelectionCommand,
     MoveDimensionsCommand,
     MoveHostedObjectsCommand,
     MoveWallsCommand,
@@ -159,7 +160,7 @@ class DrawingView(QGraphicsView):
         self._door_wall: Wall | None = None
         self._door_position: float | None = None
         self._wall_service = WallService()
-        self._snap_controller = SnapService()
+        self._snap_service = SnapService()
         self._snap_enabled = True
         self._snap_distance_mm = 200.0
         self._angle_snap_increment: float = 15.0
@@ -222,8 +223,8 @@ class DrawingView(QGraphicsView):
     def set_snap_options(self, enabled: bool, distance_mm: float) -> None:
         """Set snap enablement; snap radius is managed internally by zoom-aware logic."""
         self._snap_enabled = enabled
-        self._snap_controller.set_snap_enabled(enabled)
-        self._snap_controller.set_snap_distance(distance_mm)
+        self._snap_service.set_snap_enabled(enabled)
+        self._snap_service.set_snap_distance(distance_mm)
 
     def set_dimension_options(self, visible: bool, opacity: float) -> None:
         """Set default properties for newly created manual dimensions."""
@@ -254,7 +255,7 @@ class DrawingView(QGraphicsView):
     def set_angle_snap_increment(self, increment_degrees: float) -> None:
         """Set directional angle snap increment in degrees."""
         self._angle_snap_increment = max(1.0, min(90.0, increment_degrees))
-        self._snap_controller.set_angle_snap_increment(self._angle_snap_increment)
+        self._snap_service.set_angle_snap_increment(self._angle_snap_increment)
 
     def wheelEvent(self, event: QWheelEvent | None) -> None:  # noqa: N802
         """Zoom in/out around cursor while clamping scale to safe bounds."""
@@ -384,11 +385,21 @@ class DrawingView(QGraphicsView):
             self._last_pan_pos = event.pos()
             horizontal = self.horizontalScrollBar()
             vertical = self.verticalScrollBar()
+            moved_by_scrollbar = False
 
             if horizontal is not None:
+                previous = horizontal.value()
                 horizontal.setValue(horizontal.value() - delta.x())
+                moved_by_scrollbar = moved_by_scrollbar or (horizontal.value() != previous)
             if vertical is not None:
+                previous = vertical.value()
                 vertical.setValue(vertical.value() - delta.y())
+                moved_by_scrollbar = moved_by_scrollbar or (vertical.value() != previous)
+
+            if not moved_by_scrollbar:
+                center = self.mapToScene(self.viewport().rect().center())
+                target = self.mapToScene(self.viewport().rect().center() - delta)
+                self.centerOn(center + (center - target))
 
             if isinstance(scene, DrawingScene):
                 scene.update()
@@ -464,6 +475,36 @@ class DrawingView(QGraphicsView):
                 return
 
         super().keyPressEvent(event)
+
+    def delete_selected_items(self) -> None:
+        """Delete current selection as one undoable command."""
+        scene = self.scene()
+        if not isinstance(scene, DrawingScene) or self._command_sink is None:
+            return
+        floor = scene.active_floor
+        if floor is None:
+            return
+
+        command = DeleteFloorSelectionCommand(
+            floor=floor,
+            walls=scene.selected_walls(),
+            dimensions=scene.selected_manual_dimensions(),
+            windows=scene.selected_windows(),
+            doors=scene.selected_doors(),
+            openings=scene.selected_openings(),
+            stairs=scene.selected_stairs(),
+            roof_slopes=scene.selected_roof_slopes(),
+        )
+        self._command_sink.push(command)
+        scene.refresh_walls()
+        scene.refresh_windows()
+        scene.refresh_doors()
+        scene.refresh_openings()
+        scene.refresh_stairs()
+        scene.refresh_roof_slopes()
+        scene.refresh_rooms()
+        scene.refresh_dimensions()
+        scene.refresh_height_zones()
 
     def _handle_wall_click(self, view_pos: QPoint) -> None:
         """Handle two-click wall creation workflow."""
@@ -917,11 +958,11 @@ class DrawingView(QGraphicsView):
 
     def _snap_point(self, point: Point) -> Point:
         """Snap world point to wall-aware targets when enabled."""
-        return self._snap_controller.snap_point(self, point)
+        return self._snap_service.snap_point(self, point)
 
     def _snap_dimension_endpoint_point(self, point: Point) -> Point:
         """Snap dimension start/end points to wall and hosted-object corners and edges."""
-        return self._snap_controller.snap_dimension_endpoint_point(self, point)
+        return self._snap_service.snap_dimension_endpoint_point(self, point)
 
     def _snap_for_wall_creation(
         self,
@@ -930,7 +971,7 @@ class DrawingView(QGraphicsView):
         snap_distance: float,
     ) -> Point:
         """Snap new wall drawing to wall endpoints, attachments, side geometry, and angle."""
-        return self._snap_controller.snap_for_wall_creation(self, point, walls, snap_distance)
+        return self._snap_service.snap_for_wall_creation(self, point, walls, snap_distance)
 
     def _snap_for_wall_movement(
         self,
@@ -939,7 +980,7 @@ class DrawingView(QGraphicsView):
         snap_distance: float,
     ) -> Point:
         """Snap moved walls to wall endpoints, attachments, side geometry, and grid."""
-        return self._snap_controller.snap_for_wall_movement(self, point, walls, snap_distance)
+        return self._snap_service.snap_for_wall_movement(self, point, walls, snap_distance)
 
     def _snap_for_wall_hosted(
         self,
@@ -948,7 +989,7 @@ class DrawingView(QGraphicsView):
         snap_distance: float,
     ) -> Point:
         """Snap hosted-object placement only to walls and grid."""
-        return self._snap_controller.snap_for_wall_hosted(self, point, walls, snap_distance)
+        return self._snap_service.snap_for_wall_hosted(self, point, walls, snap_distance)
 
     def _snap_with_priority(
         self,
@@ -961,7 +1002,7 @@ class DrawingView(QGraphicsView):
         centerline_segments: list[tuple[Point, Point]],
     ) -> Point | None:
         """Return nearest wall snap target according to intent-specific priority."""
-        return self._snap_controller.snap_with_priority(
+        return self._snap_service.snap_with_priority(
             point,
             snap_distance,
             endpoint_targets,
@@ -973,31 +1014,32 @@ class DrawingView(QGraphicsView):
 
     def _walls_for_snap(self, scene: DrawingScene) -> list[Wall]:
         """Return walls from the active floor for snapping."""
-        return self._snap_controller.walls_for_snap(self, scene)
+        _unused_scene = scene
+        return self._snap_service.walls_for_snap(self)
 
     def _wall_outline_points(self, wall: Wall) -> list[Point]:
         """Return the rectangle corners of a wall thickness footprint."""
-        return self._snap_controller.wall_outline_points(wall)
+        return self._snap_service.wall_outline_points(wall)
 
     def _wall_side_midpoints(self, wall: Wall) -> list[Point]:
         """Return midpoints of the wall's outer contour edges."""
-        return self._snap_controller.wall_side_midpoints(wall)
+        return self._snap_service.wall_side_midpoints(wall)
 
     def _wall_side_segments(self, wall: Wall) -> list[tuple[Point, Point]]:
         """Return the outer contour segments of a wall."""
-        return self._snap_controller.wall_side_segments(wall)
+        return self._snap_service.wall_side_segments(wall)
 
     def _wall_attachment_points(self, wall: Wall, attachment_width: float) -> list[Point]:
         """Return dynamic anchor points near wall corners."""
-        return self._snap_controller.wall_attachment_points(wall, attachment_width)
+        return self._snap_service.wall_attachment_points(wall, attachment_width)
 
     def _current_wall_thickness(self) -> float:
         """Return the default thickness for the currently active wall tool."""
-        return self._snap_controller.current_wall_thickness(self)
+        return self._snap_service.current_wall_thickness(self)
 
     def _nearest_point(self, source: Point, targets: list[Point], radius: float) -> Point | None:
         """Return nearest target point within a radius."""
-        return self._snap_controller.nearest_point(source, targets, radius)
+        return self._snap_service.nearest_point(source, targets, radius)
 
     def _nearest_segment_projection(
         self,
@@ -1006,11 +1048,11 @@ class DrawingView(QGraphicsView):
         radius: float,
     ) -> Point | None:
         """Return the nearest projection onto a segment within a radius."""
-        return self._snap_controller.nearest_segment_projection(source, segments, radius)
+        return self._snap_service.nearest_segment_projection(source, segments, radius)
 
     def _snap_grid(self, point: Point) -> Point:
         """Snap a point to a zoom-aware grid."""
-        return self._snap_controller.snap_grid(self, point)
+        return self._snap_service.snap_grid(self, point)
 
     def _cursor_snap_point(self, point: Point) -> Point:
         """Return the snap point used for cursor feedback in the current interaction state."""
@@ -1905,24 +1947,24 @@ class DrawingView(QGraphicsView):
 
     def _quantize_point(self, point: Point) -> Point:
         """Quantize a world point to the current zoom-aware grid."""
-        return self._snap_controller.quantize_point(self, point)
+        return self._snap_service.quantize_point(self, point)
 
     def _nearest_selection_corner(self, click_world: Point) -> Point:
         """Return nearest corner from current selection for stable move anchoring."""
-        return self._snap_controller.nearest_selection_corner(self, click_world)
+        return self._snap_service.nearest_selection_corner(self, click_world)
 
     def _selection_corner_points(self) -> list[Point]:
         """Collect snap-relevant corners from selected movable objects."""
-        return self._snap_controller.selection_corner_points(self)
+        return self._snap_service.selection_corner_points(self)
 
     def _wall_corner_points(self, walls: list[Wall]) -> list[Point]:
         """Return outer-corner points of selected walls."""
-        return self._snap_controller.wall_corner_points(walls)
+        return self._snap_service.wall_corner_points(walls)
 
     def _stair_corner_points(self, stairs: list[Stair]) -> list[Point]:
         """Return axis-aligned rectangle corners of selected stairs."""
-        return self._snap_controller.stair_corner_points(stairs)
+        return self._snap_service.stair_corner_points(stairs)
 
     def _roof_slope_corner_points(self, slopes: list[RoofSlope]) -> list[Point]:
         """Return boundary corners from selected roof slopes."""
-        return self._snap_controller.roof_slope_corner_points(slopes)
+        return self._snap_service.roof_slope_corner_points(slopes)

@@ -8,7 +8,7 @@ class SceneFactory:
     def create():
         scene = DrawingScene()
 
-        # Default UI/graphics setup
-        scene.setSceneRect(0, 0, 2000, 2000)
+        # Keep a large centered world so scroll/pan remains available at low zoom.
+        scene.setSceneRect(-50000.0, -50000.0, 100000.0, 100000.0)
 
         return scene

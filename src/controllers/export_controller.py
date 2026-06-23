@@ -21,32 +21,3 @@ class ExportController:
     def export_comparison_report(self, floor: Floor, target_path: str | Path) -> None:
         """Export current floor area-comparison report as PDF."""
         self._service.export_comparison_report(floor, target_path)
-
-    def handle_export_floor_action(self, window: object, export_format: str) -> None:
-        """Handle QAction trigger for floor export."""
-        export_handlers = {
-            "pdf": "_export_floor_pdf",
-            "csv": "_export_floor_csv",
-            "png": "_export_floor_png",
-            "svg": "_export_floor_svg",
-            "xlsx": "_export_floor_xlsx",
-            "txt": "_export_floor_txt",
-        }
-        handler_name = export_handlers.get(export_format)
-        if handler_name is None:
-            return
-        handler = getattr(window, handler_name, None)
-        if callable(handler):
-            handler()
-
-    def handle_export_comparison_action(self, window: object) -> None:
-        """Handle QAction trigger for comparison report export."""
-        handler = getattr(window, "_export_comparison_report", None)
-        if callable(handler):
-            handler()
-
-    def handle_create_snapshot_action(self, window: object) -> None:
-        """Handle QAction trigger for snapshot creation."""
-        handler = getattr(window, "_create_snapshot", None)
-        if callable(handler):
-            handler()

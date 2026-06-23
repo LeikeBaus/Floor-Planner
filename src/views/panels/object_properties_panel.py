@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -14,10 +15,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from geometry.point import Point
 from models.dimension import Dimension
 from models.door import Door
-from models.floor import Floor
 from models.opening import Opening
 from models.roof_slope import RoofSlope
 from models.room import Room
@@ -29,6 +28,8 @@ from views.scene.drawing_scene import DrawingScene
 
 class ObjectPropertiesPanel(QWidget):
     """Display and edit parameters for exactly one selected object."""
+
+    property_change_requested = pyqtSignal(object, dict, float, float)
 
     def __init__(self) -> None:
         super().__init__()
@@ -47,6 +48,7 @@ class ObjectPropertiesPanel(QWidget):
             Wall | Window | Door | Opening | Stair | RoofSlope | Dimension | Room | None
         ) = None
         self._on_changed: Callable[[], None] | None = None
+        self._scene: DrawingScene | None = None
         self._default_exterior_wall_thickness: float = 300.0
         self._default_interior_wall_thickness: float = 110.0
 
@@ -58,12 +60,12 @@ class ObjectPropertiesPanel(QWidget):
     def set_selection(
         self,
         scene: DrawingScene,
-        floor: Floor,
-        on_changed: Callable[[], None],
+        on_changed: Callable[[], None] | None = None,
     ) -> None:
         """Render controls for selected object if exactly one item is selected."""
         self._clear_form()
         self._on_changed = on_changed
+        self._scene = scene
         self._suspend_updates = True
 
         selected_targets: list[
@@ -216,95 +218,12 @@ class ObjectPropertiesPanel(QWidget):
             elif isinstance(widget, QCheckBox):
                 values[key] = bool(widget.isChecked())
 
-        if isinstance(target, Wall):
-            requested_wall_type = WallType(
-                str(values.get("wall_type", target.wall_type.value))
-            )
-            wall_type_changed = requested_wall_type != target.wall_type
-            target.wall_type = requested_wall_type
-            start_x = float(values.get("start_x", target.start.x))
-            start_y = float(values.get("start_y", target.start.y))
-            end_x = float(values.get("end_x", target.end.x))
-            end_y = float(values.get("end_y", target.end.y))
-            target.start = Point(start_x, start_y)
-            target.end = Point(end_x, end_y)
-
-            if "length_mm" in values:
-                dx = target.end.x - target.start.x
-                dy = target.end.y - target.start.y
-                current_length = (dx * dx + dy * dy) ** 0.5
-                requested_length = max(1.0, float(values["length_mm"]))
-                if current_length > 1e-6:
-                    scale = requested_length / current_length
-                    target.end = Point(
-                        target.start.x + dx * scale,
-                        target.start.y + dy * scale,
-                    )
-
-            self._sync_spin("length_mm", target.length)
-            if wall_type_changed:
-                target.thickness = self._default_thickness_for_wall_type(target.wall_type)
-                self._sync_spin("thickness_mm", target.thickness)
-            else:
-                target.thickness = float(values.get("thickness_mm", target.thickness))
-
-        if isinstance(target, (Window, Door, Opening)):
-            target.position = float(values.get("position_mm", target.position))
-        if isinstance(target, (Window, Door, Opening, Stair)):
-            target.width = float(values.get("width_mm", target.width))
-        if isinstance(target, (Window, Door, Opening)):
-            target.height = float(values.get("height_mm", target.height))
-        if isinstance(target, Stair):
-            target.depth = float(values.get("depth_mm", target.depth))
-            target.position_x = float(values.get("position_x", target.position_x))
-            target.position_y = float(values.get("position_y", target.position_y))
-            target.orientation_degrees = float(
-                values.get("orientation_deg", target.orientation_degrees)
-            )
-        if isinstance(target, Door):
-            target.swing_direction = str(values.get("swing_direction", target.swing_direction))
-        if isinstance(target, RoofSlope):
-            start = Point(
-                float(values.get("start_x", target.start_line_start.x)),
-                float(values.get("start_y", target.start_line_start.y)),
-            )
-            end = Point(
-                float(values.get("end_x", target.start_line_end.x)),
-                float(values.get("end_y", target.start_line_end.y)),
-            )
-            requested_length = float(values.get("length_mm", 0.0))
-            dx = end.x - start.x
-            dy = end.y - start.y
-            length = (dx * dx + dy * dy) ** 0.5
-            if length > 1e-6:
-                normal_x = -dy / length
-                normal_y = dx / length
-                target_end_start = Point(
-                    start.x + normal_x * requested_length,
-                    start.y + normal_y * requested_length,
-                )
-                target_end_end = Point(
-                    end.x + normal_x * requested_length,
-                    end.y + normal_y * requested_length,
-                )
-            else:
-                target_end_start = target.end_line_start
-                target_end_end = target.end_line_end
-
-            target.start_line_start = start
-            target.start_line_end = end
-            target.end_line_start = target_end_start
-            target.end_line_end = target_end_end
-            self._sync_spin("length_mm", self._roof_slope_length(target))
-            target.height_start = float(values.get("height_start", target.height_start))
-            target.height_end = float(values.get("height_end", target.height_end))
-        if isinstance(target, Dimension):
-            target.opacity = float(values.get("opacity", target.opacity))
-        if isinstance(target, Room):
-            target.name = str(values.get("name", target.name))
-            target.include_in_living_area = bool(
-                values.get("include_in_living_area", target.include_in_living_area)
-            )
+        self.property_change_requested.emit(
+            target,
+            values,
+            self._default_exterior_wall_thickness,
+            self._default_interior_wall_thickness,
+        )
 
         if self._on_changed is not None:
             self._on_changed()
@@ -315,22 +234,9 @@ class ObjectPropertiesPanel(QWidget):
         self._current_editor_values.clear()
         self._current_target = None
 
-    def _sync_spin(self, key: str, value: float) -> None:
-        widget = self._current_editor_values.get(key)
-        if isinstance(widget, QDoubleSpinBox):
-            widget.blockSignals(True)
-            widget.setValue(value)
-            widget.blockSignals(False)
-
     def _roof_slope_length(self, roof_slope: RoofSlope) -> float:
         """Return perpendicular distance between the roof slope boundary lines."""
         dx: float = roof_slope.end_line_start.x - roof_slope.start_line_start.x
         dy: float = roof_slope.end_line_start.y - roof_slope.start_line_start.y
         length: float = (dx * dx + dy * dy) ** 0.5
         return length
-
-    def _default_thickness_for_wall_type(self, wall_type: WallType) -> float:
-        """Return the configured default thickness for a wall type."""
-        if wall_type == WallType.INTERIOR:
-            return self._default_interior_wall_thickness
-        return self._default_exterior_wall_thickness

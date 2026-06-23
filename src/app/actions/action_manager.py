@@ -127,6 +127,9 @@ class ActionManager:
         self.placement_actions.addAction(self.actions[ActionID.STAIR])
         self.placement_actions.addAction(self.actions[ActionID.ROOF_SLOPE])
         self.placement_actions.setExclusive(True)
+        for action in self.placement_actions.actions():
+            action.setCheckable(True)
+        self.actions[ActionID.SELECT].setChecked(True)
         self.placement_actions.setEnabled(False)  # Initially disabled until a project is loaded
 
         # Floor actions
@@ -140,4 +143,7 @@ class ActionManager:
         self.floor_actions.addAction(self.actions[ActionID.FIRST_FLOOR])
         self.floor_actions.addAction(self.actions[ActionID.SECOND_FLOOR])
         self.floor_actions.setExclusive(True)
+        for action in self.floor_actions.actions():
+            action.setCheckable(True)
+        self.actions[ActionID.GROUND_FLOOR].setChecked(True)
         self.floor_actions.setEnabled(False)  # Initially disabled until a project is loaded

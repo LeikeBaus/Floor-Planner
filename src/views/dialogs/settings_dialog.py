@@ -82,9 +82,8 @@ class SettingsDialog(QDialog):
 
         self._unit_system_combo = QComboBox(self)
         self._unit_system_combo.addItem("Metric", UnitSystem.METRIC.value)
-        self._unit_system_combo.setCurrentIndex(
-            0 if settings.unit_system == UnitSystem.METRIC else 0
-        )
+        index = self._unit_system_combo.findData(settings.unit_system.value)
+        self._unit_system_combo.setCurrentIndex(index if index >= 0 else 0)
 
         form_layout = QFormLayout()
         form_layout.addRow("Exterior Wall Thickness", self._exterior_wall_spin)

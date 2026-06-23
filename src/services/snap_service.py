@@ -6,47 +6,40 @@ import math
 from dataclasses import dataclass, field
 
 from geometry.point import Point
-from geometry.snap_engine import SnapEngine
 from models.roof_slope import RoofSlope
 from models.stair import Stair
 from models.wall import Wall, WallType
-from views.scene.drawing_scene import DrawingScene
+from services.snap_logic_service import SnapLogicService
 
 
 @dataclass(slots=True)
 class SnapService:
-    """Owns snap calculations and anchor selection for the drawing view."""
+    """UI adapter for snap behavior driven by DrawingView/DrawingScene state."""
 
-    _snap_engine: SnapEngine = field(default_factory=SnapEngine)
-    _snap_enabled: bool = True
-    _snap_distance_mm: float = 300.0
-    _angle_snap_increment: float = 15.0
+    _logic: SnapLogicService = field(default_factory=SnapLogicService)
 
     def set_snap_enabled(self, enabled: bool) -> None:
         """Enable or disable snapping."""
-        self._snap_enabled = enabled
+        self._logic.set_snap_enabled(enabled)
 
     def set_snap_distance(self, distance_mm: float) -> None:
         """Set the base snap distance used for zoom-aware snapping."""
-        self._snap_distance_mm = max(0.0, distance_mm)
+        self._logic.set_snap_distance(distance_mm)
 
     def set_angle_snap_increment(self, increment_degrees: float) -> None:
         """Set directional angle snap increment in degrees."""
-        self._angle_snap_increment = max(1.0, min(90.0, increment_degrees))
+        self._logic.set_angle_snap_increment(increment_degrees)
 
     def snap_point(self, view: object, point: Point) -> Point:
         """Snap world point to wall-aware targets when enabled."""
-        scene = self._scene_from_view(view)
-        if not isinstance(scene, DrawingScene) or not self._snap_enabled:
+        context = self._view_context(view)
+        if context is None or not self._logic.is_snap_enabled():
             self._publish_debug_snap_point(view, None)
             return point
 
-        snap_distance = self._snap_engine.dynamic_snap_distance(
-            base_distance=self._snap_distance_mm,
-            zoom_scale=self._view_zoom_scale(view),
-        )
+        snap_distance = self._logic.dynamic_snap_distance(self._view_zoom_scale(view))
 
-        walls = self.walls_for_snap(scene)
+        walls = self.walls_for_snap(view)
         wall_id_to_skip = self._find_preview_start_wall_id(view)
         if wall_id_to_skip is not None:
             walls = [wall for wall in walls if wall.id != wall_id_to_skip]
@@ -65,18 +58,15 @@ class SnapService:
 
     def snap_dimension_endpoint_point(self, view: object, point: Point) -> Point:
         """Snap dimension start/end points to wall and hosted-object corners and edges."""
-        scene = self._scene_from_view(view)
-        if not isinstance(scene, DrawingScene) or not self._snap_enabled:
+        context = self._view_context(view)
+        if context is None or not self._logic.is_snap_enabled():
             self._publish_debug_snap_point(view, None)
             return point
-        print(f"Base snap distance: {self._snap_distance_mm:.2f} mm")
-        snap_distance = self._snap_engine.dynamic_snap_distance(
-            base_distance=self._snap_distance_mm,
-            zoom_scale=self._view_zoom_scale(view),
-        )
+        print(f"Base snap distance: {self._logic.snap_distance_mm():.2f} mm")
+        snap_distance = self._logic.dynamic_snap_distance(self._view_zoom_scale(view))
         print(f"Snapping dimension endpoint with snap distance {snap_distance:.2f}")
 
-        corners, attachments, edge_segments = self._dimension_snap_targets(view, scene)
+        corners, attachments, edge_segments = self._dimension_snap_targets(view, context)
         snapped_corner = self._nearest_point(point, corners, snap_distance)
         if snapped_corner is not None:
             print(f"Snapped to corner at ({snapped_corner.x:.2f}, {snapped_corner.y:.2f})")
@@ -289,7 +279,7 @@ class SnapService:
         centerline_segments: list[tuple[Point, Point]],
     ) -> Point | None:
         """Return nearest wall snap target according to intent-specific priority."""
-        return self._snap_with_priority(
+        return self._logic.snap_with_priority(
             point=point,
             snap_distance=snap_distance,
             endpoint_targets=endpoint_targets,
@@ -299,9 +289,12 @@ class SnapService:
             centerline_segments=centerline_segments,
         )
 
-    def walls_for_snap(self, scene: DrawingScene) -> list[Wall]:
+    def walls_for_snap(self, view: object) -> list[Wall]:
         """Return walls from the active floor for snapping."""
-        floor = scene.active_floor
+        context = self._view_context(view)
+        if context is None:
+            return []
+        floor = context["active_floor"]
         if floor is None:
             return []
 
@@ -309,64 +302,19 @@ class SnapService:
 
     def wall_outline_points(self, wall: Wall) -> list[Point]:
         """Return the rectangle corners of a wall thickness footprint."""
-        dx = wall.end.x - wall.start.x
-        dy = wall.end.y - wall.start.y
-        length = math.hypot(dx, dy)
-        if length <= 1e-6:
-            return []
-
-        nx = -dy / length
-        ny = dx / length
-        half = wall.thickness / 2.0
-        return [
-            Point(wall.start.x + nx * half, wall.start.y + ny * half),
-            Point(wall.end.x + nx * half, wall.end.y + ny * half),
-            Point(wall.end.x - nx * half, wall.end.y - ny * half),
-            Point(wall.start.x - nx * half, wall.start.y - ny * half),
-        ]
+        return self._logic.wall_outline_points(wall)
 
     def wall_side_midpoints(self, wall: Wall) -> list[Point]:
         """Return midpoints of the wall's outer contour edges."""
-        points = self.wall_outline_points(wall)
-        if len(points) < 4:
-            return []
-
-        return [
-            Point(
-                (points[index].x + points[(index + 1) % 4].x) / 2.0,
-                (points[index].y + points[(index + 1) % 4].y) / 2.0,
-            )
-            for index in range(4)
-        ]
+        return self._logic.wall_side_midpoints(wall)
 
     def wall_side_segments(self, wall: Wall) -> list[tuple[Point, Point]]:
         """Return the outer contour segments of a wall."""
-        points = self.wall_outline_points(wall)
-        if len(points) < 4:
-            return []
-
-        return [(points[index], points[(index + 1) % 4]) for index in range(4)]
+        return self._logic.wall_side_segments(wall)
 
     def wall_attachment_points(self, wall: Wall, attachment_width: float) -> list[Point]:
         """Return dynamic anchor points near wall corners."""
-        if attachment_width <= 0.0:
-            return []
-
-        half_attachment = attachment_width / 2.0
-        attachments: list[Point] = []
-        for start, end in self.wall_side_segments(wall):
-            edge_dx = end.x - start.x
-            edge_dy = end.y - start.y
-            edge_length = math.hypot(edge_dx, edge_dy)
-            if edge_length <= attachment_width + 1e-6:
-                continue
-
-            ux = edge_dx / edge_length
-            uy = edge_dy / edge_length
-            attachments.append(Point(start.x + ux * half_attachment, start.y + uy * half_attachment))
-            attachments.append(Point(end.x - ux * half_attachment, end.y - uy * half_attachment))
-
-        return attachments
+        return self._logic.wall_attachment_points(wall, attachment_width)
 
     def current_wall_thickness(self, view: object) -> float:
         """Return the default thickness for the currently active wall tool."""
@@ -377,7 +325,7 @@ class SnapService:
 
     def nearest_point(self, source: Point, targets: list[Point], radius: float) -> Point | None:
         """Return nearest target point within a radius."""
-        return self._nearest_point(source, targets, radius)
+        return self._logic.nearest_point(source, targets, radius)
 
     def nearest_segment_projection(
         self,
@@ -386,19 +334,17 @@ class SnapService:
         radius: float,
     ) -> Point | None:
         """Return the nearest projection onto a segment within a radius."""
-        return self._nearest_segment_projection(source, segments, radius)
+        return self._logic.nearest_segment_projection(source, segments, radius)
 
     def snap_grid(self, view: object, point: Point) -> Point:
         """Snap a point to a zoom-aware grid."""
-        scene = self._scene_from_view(view)
-        if not isinstance(scene, DrawingScene):
+        context = self._view_context(view)
+        if context is None:
             return point
 
         zoom_scale = max(0.01, self._view_zoom_scale(view))
-        grid_step, _ = scene.grid_steps_for_zoom(zoom_scale)
-        snapped_x = round(point.x / grid_step) * grid_step
-        snapped_y = round(point.y / grid_step) * grid_step
-        return Point(snapped_x, snapped_y)
+        grid_step = self._grid_step_for_zoom(context, zoom_scale)
+        return self._logic.snap_grid(point, grid_step)
 
     def quantize_point(self, view: object, point: Point) -> Point:
         """Quantize a world point to the current zoom-aware grid."""
@@ -425,31 +371,20 @@ class SnapService:
 
     def wall_corner_points(self, walls: list[Wall]) -> list[Point]:
         """Return outer-corner points of selected walls."""
-        return self._wall_corner_points(None, walls)
+        return self._logic.wall_corner_points(walls)
 
     def stair_corner_points(self, stairs: list[Stair]) -> list[Point]:
         """Return axis-aligned rectangle corners of selected stairs."""
-        return self._stair_corner_points(None, stairs)
+        return self._logic.stair_corner_points(stairs)
 
     def roof_slope_corner_points(self, slopes: list[RoofSlope]) -> list[Point]:
         """Return boundary corners from selected roof slopes."""
-        return self._roof_slope_corner_points(None, slopes)
+        return self._logic.roof_slope_corner_points(slopes)
 
     def snap_to_angle(self, view: object, start: Point, end: Point) -> Point:
         """Snap the vector from start to end to the configured angle increment."""
-        dx = end.x - start.x
-        dy = end.y - start.y
-        length = math.hypot(dx, dy)
-        if length <= 1e-6:
-            return end
-
-        increment_rad = math.radians(self._angle_snap_increment)
-        angle = math.atan2(dy, dx)
-        snapped_angle = round(angle / increment_rad) * increment_rad
-        return Point(
-            x=start.x + math.cos(snapped_angle) * length,
-            y=start.y + math.sin(snapped_angle) * length,
-        )
+        _unused_view = view
+        return self._logic.snap_to_angle(start, end)
 
     def _publish_debug_snap_point(self, view: object, point: Point | None) -> None:
         """Publish the current debug snap point to scene and status listeners."""
@@ -457,11 +392,27 @@ class SnapService:
         if callable(publish):
             publish(point)
 
-    def _scene_from_view(self, view: object) -> DrawingScene | None:
+    def _view_context(self, view: object) -> dict[str, object] | None:
+        """Extract minimal drawing context from view without importing UI classes."""
         scene_getter = getattr(view, "scene", None)
-        if callable(scene_getter):
-            return scene_getter()
-        return None
+        if not callable(scene_getter):
+            return None
+        scene = scene_getter()
+        active_floor = getattr(scene, "active_floor", None)
+        grid_steps_for_zoom = getattr(scene, "grid_steps_for_zoom", None)
+        if active_floor is None or not callable(grid_steps_for_zoom):
+            return None
+        return {
+            "active_floor": active_floor,
+            "grid_steps_for_zoom": grid_steps_for_zoom,
+        }
+
+    def _grid_step_for_zoom(self, context: dict[str, object], zoom_scale: float) -> float:
+        getter = context.get("grid_steps_for_zoom")
+        if callable(getter):
+            step, _major = getter(zoom_scale)
+            return float(step)
+        return 50.0
 
     def _view_zoom_scale(self, view: object) -> float:
         transform_getter = getattr(view, "transform", None)
@@ -475,9 +426,9 @@ class SnapService:
             return finder()
         return None
 
-    def _dimension_snap_targets(self, view: object, scene: DrawingScene) -> tuple[list[Point], list[tuple[Point, Point]]]:
+    def _dimension_snap_targets(self, view: object, context: dict[str, object]) -> tuple[list[Point], list[tuple[Point, Point]]]:
         """Collect corners and edges used when snapping dimension endpoints."""
-        floor = scene.active_floor
+        floor = context["active_floor"]
         if floor is None:
             return ([], [])
 
@@ -512,40 +463,7 @@ class SnapService:
 
     def _hosted_object_outline_points(self, wall: Wall, position: float, width: float) -> list[Point]:
         """Return the outline rectangle corners of a wall-hosted object."""
-        wall_dx = wall.end.x - wall.start.x
-        wall_dy = wall.end.y - wall.start.y
-        wall_length = math.hypot(wall_dx, wall_dy)
-        if wall_length <= 1e-6:
-            return []
-
-        wall_ux = wall_dx / wall_length
-        wall_uy = wall_dy / wall_length
-        perp_ux = -wall_uy
-        perp_uy = wall_ux
-
-        center_x = wall.start.x + wall_ux * position
-        center_y = wall.start.y + wall_uy * position
-        half_width = width / 2.0
-        half_depth = max(40.0, wall.thickness / 2.0)
-
-        return [
-            Point(
-                center_x - wall_ux * half_width - perp_ux * half_depth,
-                center_y - wall_uy * half_width - perp_uy * half_depth,
-            ),
-            Point(
-                center_x + wall_ux * half_width - perp_ux * half_depth,
-                center_y + wall_uy * half_width - perp_uy * half_depth,
-            ),
-            Point(
-                center_x + wall_ux * half_width + perp_ux * half_depth,
-                center_y + wall_uy * half_width + perp_uy * half_depth,
-            ),
-            Point(
-                center_x - wall_ux * half_width + perp_ux * half_depth,
-                center_y - wall_uy * half_width + perp_uy * half_depth,
-            ),
-        ]
+        return self._logic.hosted_object_outline_points(wall, position, width)
 
     def _snap_with_priority(
         self,
@@ -558,40 +476,19 @@ class SnapService:
         centerline_segments: list[tuple[Point, Point]],
     ) -> Point | None:
         """Return nearest wall snap target according to intent-specific priority."""
-        endpoint = self._nearest_point(point, endpoint_targets, snap_distance)
-        if endpoint is not None:
-            return endpoint
-
-        attachment = self._nearest_point(point, attachment_targets, snap_distance)
-        if attachment is not None:
-            return attachment
-
-        midpoint = self._nearest_point(point, midpoint_targets, snap_distance)
-        if midpoint is not None:
-            return midpoint
-
-        edge = self._nearest_segment_projection(point, edge_segments, snap_distance)
-        if edge is not None:
-            return edge
-
-        centerline = self._nearest_segment_projection(point, centerline_segments, snap_distance)
-        if centerline is not None:
-            return centerline
-
-        return None
+        return self._logic.snap_with_priority(
+            point=point,
+            snap_distance=snap_distance,
+            endpoint_targets=endpoint_targets,
+            attachment_targets=attachment_targets,
+            midpoint_targets=midpoint_targets,
+            edge_segments=edge_segments,
+            centerline_segments=centerline_segments,
+        )
 
     def _nearest_point(self, source: Point, targets: list[Point], radius: float) -> Point | None:
         """Return nearest target point within a radius."""
-        best_point: Point | None = None
-        best_distance = radius
-
-        for target in targets:
-            candidate_distance = math.hypot(source.x - target.x, source.y - target.y)
-            if candidate_distance <= best_distance:
-                best_distance = candidate_distance
-                best_point = target
-
-        return best_point
+        return self._logic.nearest_point(source, targets, radius)
 
     def _nearest_segment_projection(
         self,
@@ -600,63 +497,22 @@ class SnapService:
         radius: float,
     ) -> Point | None:
         """Return the nearest projection onto a segment within a radius."""
-        best_point: Point | None = None
-        best_distance = radius
-
-        for start, end in segments:
-            dx = end.x - start.x
-            dy = end.y - start.y
-            length_sq = dx * dx + dy * dy
-            if length_sq <= 1e-6:
-                continue
-
-            offset_x = source.x - start.x
-            offset_y = source.y - start.y
-            t = max(0.0, min(1.0, (offset_x * dx + offset_y * dy) / length_sq))
-            projected = Point(start.x + t * dx, start.y + t * dy)
-            candidate_distance = math.hypot(source.x - projected.x, source.y - projected.y)
-            if candidate_distance <= best_distance:
-                best_distance = candidate_distance
-                best_point = projected
-
-        return best_point
+        return self._logic.nearest_segment_projection(source, segments, radius)
 
     def _wall_corner_points(self, view: object | None, walls: list[Wall]) -> list[Point]:
         """Return outer-corner points of selected walls."""
-        result: list[Point] = []
-        for wall in walls:
-            result.extend(self.wall_outline_points(wall))
-        return result
+        _unused_view = view
+        return self._logic.wall_corner_points(walls)
 
     def _stair_corner_points(self, view: object | None, stairs: list[Stair]) -> list[Point]:
         """Return axis-aligned rectangle corners of selected stairs."""
-        result: list[Point] = []
-        for stair in stairs:
-            x = stair.position_x
-            y = stair.position_y
-            result.extend(
-                [
-                    Point(x, y),
-                    Point(x + stair.width, y),
-                    Point(x + stair.width, y + stair.depth),
-                    Point(x, y + stair.depth),
-                ]
-            )
-        return result
+        _unused_view = view
+        return self._logic.stair_corner_points(stairs)
 
     def _roof_slope_corner_points(self, view: object | None, slopes: list[RoofSlope]) -> list[Point]:
         """Return boundary corners from selected roof slopes."""
-        result: list[Point] = []
-        for slope in slopes:
-            result.extend(
-                [
-                    slope.start_line_start,
-                    slope.start_line_end,
-                    slope.end_line_end,
-                    slope.end_line_start,
-                ]
-            )
-        return result
+        _unused_view = view
+        return self._logic.roof_slope_corner_points(slopes)
 
     def _selection_corner_points(self, view: object) -> list[Point]:
         """Collect snap-relevant corners from selected movable objects."""

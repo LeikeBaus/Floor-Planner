@@ -10,7 +10,7 @@ class DockComposer:
     def __init__(self, main_window: QMainWindow):
         self._mw = main_window
 
-    def compose(self, widgets: DockWidgets):
+    def compose(self, widgets: DockWidgets) -> dict[str, QDockWidget]:
         # Project Tree
         project_dock = QDockWidget("Project", self._mw)
         project_dock.setWidget(widgets.project_tree)
@@ -34,3 +34,10 @@ class DockComposer:
         # Layout grouping
         self._mw.splitDockWidget(snapshot_dock, properties_dock, Qt.Orientation.Vertical)
         self._mw.splitDockWidget(properties_dock, summary_dock, Qt.Orientation.Vertical)
+
+        return {
+            "project": project_dock,
+            "snapshot": snapshot_dock,
+            "properties": properties_dock,
+            "summary": summary_dock,
+        }
